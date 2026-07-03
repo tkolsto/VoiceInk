@@ -42,6 +42,20 @@ extension AIService {
                 model: resolvedModel,
                 timeout: timeout
             )
+        case .lmStudio:
+            let root = LMStudioService.normalizedBaseURL(provider.baseURL)
+            guard let baseURL = URL(string: "\(root)/chat/completions") else {
+                throw EnhancementError.notConfigured
+            }
+            result = try await OpenAILLMClient.chatCompletion(
+                baseURL: baseURL,
+                apiKey: "lm-studio",           // ignored by LM Studio; non-empty avoids client guards
+                model: resolvedModel,
+                messages: messages,
+                systemPrompt: systemPrompt,
+                temperature: 0.3,
+                timeout: timeout
+            )
         case .localCLI:
             result = try await enhanceWithLocalCLI(
                 systemPrompt: systemPrompt ?? "",
