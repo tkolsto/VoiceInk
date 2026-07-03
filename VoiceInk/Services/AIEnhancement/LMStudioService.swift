@@ -1,7 +1,6 @@
 import Foundation
 import SwiftUI
 
-@MainActor
 final class LMStudioService: ObservableObject {
     static let defaultBaseURL = "http://localhost:1234/v1"
 
@@ -21,19 +20,20 @@ final class LMStudioService: ObservableObject {
         self.availableModels = UserDefaults.standard.stringArray(forKey: "lmStudioAvailableModels") ?? []
     }
 
-    nonisolated static func normalizedBaseURL(_ raw: String) -> String {
+    static func normalizedBaseURL(_ raw: String) -> String {
         var s = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         if s.hasSuffix("/chat/completions") { s.removeLast("/chat/completions".count) }
         while s.hasSuffix("/") { s.removeLast() }
         return s
     }
 
-    nonisolated static func parseModels(from data: Data) throws -> [String] {
+    static func parseModels(from data: Data) throws -> [String] {
         struct ModelList: Decodable { let data: [Entry] }
         struct Entry: Decodable { let id: String }
         return try JSONDecoder().decode(ModelList.self, from: data).data.map { $0.id }
     }
 
+    @MainActor
     func refreshModels() async {
         isLoadingModels = true
         defer { isLoadingModels = false }
