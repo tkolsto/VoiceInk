@@ -13,3 +13,9 @@ PROVISIONING_PROFILE_SPECIFIER =
 
 // Add LOCAL_BUILD compilation flag so Swift code can use #if LOCAL_BUILD
 SWIFT_ACTIVE_COMPILATION_CONDITIONS = $(inherited) LOCAL_BUILD
+
+// Distinct identity for local builds so macOS TCC permissions (Accessibility,
+// Microphone) don't collide with an installed App Store/notarized VoiceInk.app.
+// App Support data path is hardcoded in VoiceInk.swift and is unaffected.
+PRODUCT_BUNDLE_IDENTIFIER = com.prakashjoshipax.VoiceInk.local
+INFOPLIST_KEY_CFBundleDisplayName = VoiceInk Local
