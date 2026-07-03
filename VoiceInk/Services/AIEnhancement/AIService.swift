@@ -15,6 +15,7 @@ enum AIProvider: String, CaseIterable {
     case speechmatics = "Speechmatics"
     case assemblyAI = "AssemblyAI"
     case ollama = "Ollama"
+    case lmStudio = "LM Studio"
     case localCLI = "Local CLI"
     case custom = "Custom"
     
@@ -47,6 +48,8 @@ enum AIProvider: String, CaseIterable {
             return "https://api.assemblyai.com/v2/transcript"
         case .ollama:
             return UserDefaults.standard.string(forKey: "ollamaBaseURL") ?? "http://localhost:11434"
+        case .lmStudio:
+            return UserDefaults.standard.string(forKey: "lmStudioBaseURL") ?? "http://localhost:1234/v1"
         case .localCLI:
             return ""
         case .custom:
@@ -80,6 +83,8 @@ enum AIProvider: String, CaseIterable {
             return "universal-3-5-pro"
         case .ollama:
             return UserDefaults.standard.string(forKey: "ollamaSelectedModel") ?? "mistral"
+        case .lmStudio:
+            return UserDefaults.standard.string(forKey: "lmStudioSelectedModel") ?? ""
         case .localCLI:
             return "local-cli"
         case .custom:
@@ -152,6 +157,8 @@ enum AIProvider: String, CaseIterable {
             return ["universal-3-5-pro"]
         case .ollama:
             return []
+        case .lmStudio:
+            return UserDefaults.standard.stringArray(forKey: "lmStudioAvailableModels") ?? []
         case .localCLI:
             return []
         case .custom:
@@ -163,7 +170,7 @@ enum AIProvider: String, CaseIterable {
     
     var requiresAPIKey: Bool {
         switch self {
-        case .ollama, .localCLI:
+        case .ollama, .lmStudio, .localCLI:
             return false
         default:
             return true
