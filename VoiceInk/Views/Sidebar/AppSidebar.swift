@@ -76,15 +76,26 @@ private extension ViewType {
         .audio
     ]
 
+    #if LOCAL_BUILD
+    // Local builds are auto-licensed; hide the VoiceInk Pro entry entirely.
+    static let secondaryItems: [ViewType] = [
+        .settings
+    ]
+    #else
     static let secondaryItems: [ViewType] = [
         .settings,
         .license
     ]
+    #endif
 
     static func assertSidebarItemsCoverAllCases() {
         #if DEBUG
         let sidebarItems = primaryItems + secondaryItems
-        assert(Set(sidebarItems) == Set(allCases) && sidebarItems.count == allCases.count)
+        var expectedItems = Set(allCases)
+        #if LOCAL_BUILD
+        expectedItems.remove(.license)
+        #endif
+        assert(Set(sidebarItems) == expectedItems && sidebarItems.count == expectedItems.count)
         #endif
     }
 

@@ -15,6 +15,7 @@ enum AIProvider: String, CaseIterable {
     case speechmatics = "Speechmatics"
     case assemblyAI = "AssemblyAI"
     case ollama = "Ollama"
+    case lmStudio = "LM Studio"
     case localCLI = "Local CLI"
     case custom = "Custom"
     
@@ -47,6 +48,8 @@ enum AIProvider: String, CaseIterable {
             return "https://api.assemblyai.com/v2/transcript"
         case .ollama:
             return UserDefaults.standard.string(forKey: "ollamaBaseURL") ?? "http://localhost:11434"
+        case .lmStudio:
+            return UserDefaults.standard.string(forKey: "lmStudioBaseURL") ?? "http://localhost:1234/v1"
         case .localCLI:
             return ""
         case .custom:
@@ -80,6 +83,8 @@ enum AIProvider: String, CaseIterable {
             return "universal-3-5-pro"
         case .ollama:
             return UserDefaults.standard.string(forKey: "ollamaSelectedModel") ?? "mistral"
+        case .lmStudio:
+            return UserDefaults.standard.string(forKey: "lmStudioSelectedModel") ?? ""
         case .localCLI:
             return "local-cli"
         case .custom:
@@ -152,6 +157,8 @@ enum AIProvider: String, CaseIterable {
             return ["universal-3-5-pro"]
         case .ollama:
             return []
+        case .lmStudio:
+            return UserDefaults.standard.stringArray(forKey: "lmStudioAvailableModels") ?? []
         case .localCLI:
             return []
         case .custom:
@@ -163,7 +170,7 @@ enum AIProvider: String, CaseIterable {
     
     var requiresAPIKey: Bool {
         switch self {
-        case .ollama, .localCLI:
+        case .ollama, .lmStudio, .localCLI:
             return false
         default:
             return true
@@ -217,6 +224,11 @@ class AIService: ObservableObject {
                         await refreshOllamaAvailability()
                     }
                 }
+                if selectedProvider == .lmStudio {
+                    Task {
+                        await refreshLMStudioAvailability()
+                    }
+                }
             }
             NotificationCenter.default.post(name: .AppSettingsDidChange, object: nil)
         }
@@ -225,11 +237,13 @@ class AIService: ObservableObject {
     @Published private var selectedModels: [AIProvider: String] = [:]
     private let userDefaults = UserDefaults.standard
     private lazy var ollamaService = OllamaService()
+    private lazy var lmStudioService = LMStudioService()
     private lazy var localCLIService = LocalCLIService()
     private var apiKeyChangeObserver: NSObjectProtocol?
     
     @Published private var openRouterModels: [String] = []
     @Published private(set) var isOllamaRefreshing = false
+    @Published private(set) var isLMStudioRefreshing = false
     
     var connectedProviders: [AIProvider] {
         AIProvider.allCases.filter { provider in
@@ -241,6 +255,8 @@ class AIService: ObservableObject {
                 return CustomAIProviderManager.shared.hasConfiguredModels
             } else if provider == .ollama {
                 return ollamaService.isConnected
+            } else if provider == .lmStudio {
+                return lmStudioService.isConnected
             } else if provider == .localCLI {
                 return localCLIService.isConfigured
             } else if provider.requiresAPIKey {
@@ -253,7 +269,7 @@ class AIService: ObservableObject {
     var currentModel: String {
         if let selectedModel = selectedModels[selectedProvider],
            !selectedModel.isEmpty,
-           (selectedProvider == .ollama && !selectedModel.isEmpty) || availableModels.contains(selectedModel) {
+           ((selectedProvider == .ollama || selectedProvider == .lmStudio) && !selectedModel.isEmpty) || availableModels.contains(selectedModel) {
             return selectedModel
         }
         return selectedProvider.defaultModel
@@ -285,6 +301,8 @@ class AIService: ObservableObject {
     func availableModels(for provider: AIProvider) -> [String] {
         if provider == .ollama {
             return ollamaService.availableModels.map { $0.name }
+        } else if provider == .lmStudio {
+            return lmStudioService.availableModels
         } else if provider == .openRouter {
             return openRouterModels
         } else if provider == .custom {
@@ -589,6 +607,46 @@ class AIService: ObservableObject {
     
     func enhanceWithOllama(text: String, systemPrompt: String, model: String? = nil, timeout: TimeInterval = 30) async throws -> String {
         try await ollamaService.enhance(text, withSystemPrompt: systemPrompt, model: model, timeout: timeout)
+    }
+
+    @MainActor
+    @discardableResult
+    func refreshLMStudioAvailability() async -> [String] {
+        guard !isLMStudioRefreshing else {
+            return lmStudioService.availableModels
+        }
+
+        isLMStudioRefreshing = true
+        defer {
+            isLMStudioRefreshing = false
+            NotificationCenter.default.post(name: .AppSettingsDidChange, object: nil)
+        }
+
+        await lmStudioService.refreshModels()
+        return lmStudioService.availableModels
+    }
+
+    func refreshLMStudioAvailabilityInBackground() {
+        Task { [weak self] in
+            guard let self else { return }
+            await self.refreshLMStudioAvailability()
+        }
+    }
+
+    var isLMStudioConnected: Bool {
+        lmStudioService.isConnected
+    }
+
+    var lmStudioBaseURL: String {
+        lmStudioService.baseURL
+    }
+
+    func updateLMStudioBaseURL(_ newURL: String) {
+        lmStudioService.baseURL = LMStudioService.normalizedBaseURL(newURL)
+    }
+
+    func updateSelectedLMStudioModel(_ modelName: String) {
+        lmStudioService.selectedModel = modelName
     }
 
     func updateOllamaBaseURL(_ newURL: String) {

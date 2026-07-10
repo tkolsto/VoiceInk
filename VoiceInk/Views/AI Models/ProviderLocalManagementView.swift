@@ -5,10 +5,14 @@ struct LocalEnhancementProviderManagementView: View {
     @EnvironmentObject private var aiService: AIService
 
     @State private var isOllamaExpanded = false
+    @State private var isLMStudioExpanded = false
     @State private var isLocalCLIExpanded = false
     @State private var ollamaBaseURL = UserDefaults.standard.string(forKey: "ollamaBaseURL") ?? "http://localhost:11434"
     @State private var selectedOllamaModel = UserDefaults.standard.string(forKey: "ollamaSelectedModel") ?? "mistral"
     @State private var ollamaUserRefreshError: String?
+    @State private var lmStudioBaseURL = UserDefaults.standard.string(forKey: "lmStudioBaseURL") ?? "http://localhost:1234/v1"
+    @State private var selectedLMStudioModel = UserDefaults.standard.string(forKey: "lmStudioSelectedModel") ?? ""
+    @State private var lmStudioUserRefreshError: String?
     @State private var localCLICommandTemplate = ""
     @State private var localCLITimeoutSeconds = LocalCLIService.defaultTimeoutSeconds
     @State private var isSyncingLocalCLIState = false
@@ -21,7 +25,7 @@ struct LocalEnhancementProviderManagementView: View {
         VStack(alignment: .leading, spacing: 10) {
             ProviderSectionHeader(
                 title: "Local & CLI Providers",
-                subtitle: "Run enhancement with Ollama on this Mac, or send it to any CLI command."
+                subtitle: "Run enhancement with Ollama or LM Studio on this Mac, or send it to any CLI command."
             )
             .padding(.top, 8)
 
@@ -34,6 +38,19 @@ struct LocalEnhancementProviderManagementView: View {
                     isExpanded: $isOllamaExpanded
                 ) {
                     ollamaConfiguration
+                }
+
+                Divider()
+                    .padding(.leading, 58)
+
+                LocalProviderDisclosureRow(
+                    title: Text(verbatim: "LM Studio"),
+                    subtitle: lmStudioModelNames.isEmpty ? Text("Local server") : Text(lmStudioModelCountLabel),
+                    systemImage: "desktopcomputer",
+                    statusTitle: lmStudioStatusTitle,
+                    isExpanded: $isLMStudioExpanded
+                ) {
+                    lmStudioConfiguration
                 }
 
                 Divider()
@@ -53,6 +70,7 @@ struct LocalEnhancementProviderManagementView: View {
         }
         .onAppear {
             selectedOllamaModel = aiService.selectedModel(for: .ollama)
+            selectedLMStudioModel = aiService.selectedModel(for: .lmStudio)
             syncLocalCLIStateFromService()
         }
     }
@@ -142,6 +160,91 @@ struct LocalEnhancementProviderManagementView: View {
         }
     }
 
+    private var lmStudioModelNames: [String] {
+        aiService.availableModels(for: .lmStudio)
+    }
+
+    private var lmStudioModelCountLabel: String {
+        let count = lmStudioModelNames.count
+        return String(localized: "\(count) models")
+    }
+
+    private var lmStudioStatusTitle: Text {
+        if aiService.isLMStudioRefreshing {
+            return Text("Checking")
+        }
+
+        if !aiService.connectedProviders.contains(.lmStudio) {
+            return Text("Disconnected")
+        }
+
+        return lmStudioModelNames.isEmpty ? Text("No models") : Text(lmStudioModelCountLabel)
+    }
+
+    private var lmStudioActionTitle: LocalizedStringKey {
+        aiService.connectedProviders.contains(.lmStudio) ? "Refresh" : "Connect"
+    }
+
+    private var lmStudioConfiguration: some View {
+        LocalProviderExpandedContent {
+            LocalProviderFormRow(title: "Server") {
+                HStack(spacing: 8) {
+                    TextField("", text: $lmStudioBaseURL, prompt: Text(verbatim: "http://localhost:1234/v1"))
+                        .textFieldStyle(.roundedBorder)
+                        .frame(maxWidth: 320)
+                        .disabled(aiService.isLMStudioRefreshing)
+                        .onChange(of: lmStudioBaseURL) { _, _ in
+                            lmStudioUserRefreshError = nil
+                        }
+
+                    Button {
+                        lmStudioUserRefreshError = nil
+                        aiService.updateLMStudioBaseURL(lmStudioBaseURL)
+                        checkLMStudioConnectionFromUserAction()
+                    } label: {
+                        if aiService.isLMStudioRefreshing {
+                            ProgressView()
+                                .controlSize(.small)
+                        } else {
+                            Text(lmStudioActionTitle)
+                        }
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .disabled(aiService.isLMStudioRefreshing)
+                }
+            }
+
+            if let lmStudioUserRefreshError {
+                Text(lmStudioUserRefreshError)
+                    .font(.caption)
+                    .foregroundStyle(AppTheme.Status.error)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.leading, LocalProviderMetrics.labelWidth + 12)
+            }
+
+            if !lmStudioModelNames.isEmpty {
+                Divider()
+                    .padding(.leading, LocalProviderMetrics.labelWidth + 12)
+
+                LocalProviderFormRow(title: "Model") {
+                    Picker("Model", selection: $selectedLMStudioModel) {
+                        ForEach(lmStudioModelNames, id: \.self) { model in
+                            Text(model).tag(model)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                    .labelsHidden()
+                    .frame(maxWidth: 320, alignment: .leading)
+                    .onChange(of: selectedLMStudioModel) { _, newValue in
+                        aiService.updateSelectedLMStudioModel(newValue)
+                        aiService.selectModel(newValue, for: .lmStudio)
+                    }
+                }
+            }
+        }
+    }
+
     private var localCLIConfiguration: some View {
         LocalProviderExpandedContent {
             VStack(alignment: .leading, spacing: 8) {
@@ -225,6 +328,21 @@ struct LocalEnhancementProviderManagementView: View {
             if !models.contains(selectedOllamaModel), let firstModel = models.first {
                 selectedOllamaModel = firstModel
                 aiService.selectModel(firstModel, for: .ollama)
+            }
+        }
+    }
+
+    private func checkLMStudioConnectionFromUserAction() {
+        Task { @MainActor in
+            let models = await aiService.refreshLMStudioAvailability()
+
+            lmStudioUserRefreshError = aiService.connectedProviders.contains(.lmStudio)
+                ? nil
+                : String(localized: "Could not connect to LM Studio. Start its server from the Developer tab (or run `lms server start`).")
+
+            if !models.contains(selectedLMStudioModel), let firstModel = models.first {
+                selectedLMStudioModel = firstModel
+                aiService.selectModel(firstModel, for: .lmStudio)
             }
         }
     }

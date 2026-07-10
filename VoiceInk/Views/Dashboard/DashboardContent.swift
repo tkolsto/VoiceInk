@@ -11,8 +11,6 @@ struct DashboardContent: View {
     private static let displayNameMinWidth: CGFloat = 72
     private static let displayNameMaxWidth: CGFloat = 280
     private static let displayNameHorizontalPadding: CGFloat = 8
-    private static let insightsUnlockDuration: TimeInterval = 30 * 60
-    private static let peakHoursUnlockDuration: TimeInterval = 30 * 60
     let modelContext: ModelContext
     let licenseState: LicenseViewModel.LicenseState
     let onAddLicenseKey: () -> Void
@@ -186,41 +184,31 @@ struct DashboardContent: View {
     }
 
     private var canViewInsights: Bool {
-        hasLoadedStatsSnapshot && statsSummary.totalDuration >= Self.insightsUnlockDuration
+        hasLoadedStatsSnapshot
     }
 
     private var shouldShowLockedInsightsState: Bool {
-        hasLoadedStatsSnapshot && !canViewInsights
-    }
-
-    private var canViewPeakHours: Bool {
-        hasLoadedStatsSnapshot &&
-            selectedTotals.duration >= Self.peakHoursUnlockDuration &&
-            selectedPeakHours.hasData
+        false
     }
 
     private var shouldLockPeakHours: Bool {
-        hasLoadedStatsSnapshot && !canViewPeakHours
+        false
     }
 
     private var insightsActionTitle: LocalizedStringKey {
-        canViewInsights ? "View Insights" : "Insights Locked"
+        "View Insights"
     }
 
     private var insightsActionIcon: String {
-        canViewInsights ? "chart.line.uptrend.xyaxis" : "lock.fill"
+        "chart.line.uptrend.xyaxis"
     }
 
     private var insightsActionHelp: String {
-        if canViewInsights {
-            return String(localized: "View dashboard insights")
-        }
-
-        return String(localized: "Continue using VoiceInk to unlock these stats.")
+        String(localized: "View dashboard insights")
     }
 
     private var insightsActionAccessibilityLabel: String {
-        canViewInsights ? "View insights" : "Insights locked"
+        "View insights"
     }
 
     private var accessibilityReminder: some View {
