@@ -1,16 +1,16 @@
-import Foundation
 import FluidAudio
+import Foundation
 import os.log
 
 class FluidAudioTranscriptionService: TranscriptionService {
     private var asrManager: AsrManager?
     private var unifiedAsrManager: UnifiedAsrManager?
     private var nemotronAsrManager: StreamingNemotronMultilingualAsrManager?
-    private var vadManager: VadManager?
     private var activeVersion: AsrModelVersion?
     private var activeNemotronModelName: String?
     private var cachedModels: AsrModels?
     private var loadingTask: (version: AsrModelVersion, task: Task<AsrModels, Error>)?
+    private let audioConverter = AudioConverter()
     private let logger = Logger(subsystem: "com.prakashjoshipax.voiceink", category: "FluidAudioTranscriptionService")
 
     private func version(for model: any TranscriptionModel) -> AsrModelVersion {
@@ -32,7 +32,6 @@ class FluidAudioTranscriptionService: TranscriptionService {
         unifiedAsrManager = nil
         nemotronAsrManager = nil
         asrManager = nil
-        vadManager = nil
         activeVersion = nil
         activeNemotronModelName = nil
     }
@@ -61,7 +60,7 @@ class FluidAudioTranscriptionService: TranscriptionService {
         await cleanupLoadedManagers()
 
         let manager = UnifiedAsrManager(encoderPrecision: FluidAudioModelManager.parakeetUnifiedPrecision)
-        try await manager.loadModels()
+        try await manager.loadModels(from: FluidAudioModelManager.parakeetUnifiedCacheDirectory())
         self.unifiedAsrManager = manager
     }
 
@@ -90,9 +89,17 @@ class FluidAudioTranscriptionService: TranscriptionService {
         }
 
         let task = Task {
-            try await AsrModels.downloadAndLoad(
+            let cacheDirectory = AsrModels.defaultCacheDirectory(for: version)
+            guard AsrModels.modelsExist(at: cacheDirectory, version: version) else {
+                throw AsrModelsError.loadingFailed(
+                    "Parakeet model files are incomplete. Download the model from AI Models."
+                )
+            }
+            return try await AsrModels.load(
+                from: cacheDirectory,
                 configuration: nil,
-                version: version
+                version: version,
+                encoderPrecision: .int8
             )
         }
         loadingTask = (version, task)
@@ -128,14 +135,16 @@ class FluidAudioTranscriptionService: TranscriptionService {
         try await ensureModelsLoaded(for: version(for: model))
     }
 
-    func transcribe(audioURL: URL, model: any TranscriptionModel, context: TranscriptionRequestContext) async throws -> String {
+    func transcribe(audioURL: URL, model: any TranscriptionModel, context: TranscriptionRequestContext) async throws
+        -> String
+    {
         if FluidAudioModelManager.isParakeetUnifiedModel(named: model.name) {
             try await ensureUnifiedModelsLoaded()
             guard let unifiedAsrManager else {
                 throw ASRError.notInitialized
             }
 
-            let speechAudio = try await preparedSpeechAudio(from: audioURL, usesVAD: false)
+            let speechAudio = try loadAudioSamples(from: audioURL)
             let text = try await unifiedAsrManager.transcribe(speechAudio)
             return TextNormalizer.shared.normalizeSentence(text)
         }
@@ -146,16 +155,15 @@ class FluidAudioTranscriptionService: TranscriptionService {
                 throw ASRError.notInitialized
             }
 
-            await nemotronAsrManager.reset()
             let compatibleLanguage = TranscriptionLanguageSupport.validLanguageOrFallback(
                 context.language,
                 for: model
             )
-            await nemotronAsrManager.setLanguage(
-                FluidAudioModelManager.nemotronLanguageHint(from: compatibleLanguage)
-            )
+            let languageHint = FluidAudioModelManager.nemotronLanguageHint(from: compatibleLanguage)
+            await nemotronAsrManager.setLanguage(languageHint)
+            await nemotronAsrManager.reset()
 
-            var speechAudio = try await preparedSpeechAudio(from: audioURL, usesVAD: true)
+            var speechAudio = try loadAudioSamples(from: audioURL)
             let trailingSilenceSamples = 16_000
             let maxSingleChunkSamples = 240_000
             if speechAudio.count + trailingSilenceSamples <= maxSingleChunkSamples {
@@ -178,18 +186,9 @@ class FluidAudioTranscriptionService: TranscriptionService {
             from: context.language,
             model: model
         )
-        var speechAudio = try await preparedSpeechAudio(from: audioURL, usesVAD: true)
-
-        // Pad with 1s of silence to capture final punctuation at sequence boundary
-        let trailingSilenceSamples = 16_000
-        let maxSingleChunkSamples = 240_000
-        if speechAudio.count + trailingSilenceSamples <= maxSingleChunkSamples {
-            speechAudio += [Float](repeating: 0, count: trailingSilenceSamples)
-        }
-
         var decoderState = TdtDecoderState.make(decoderLayers: await asrManager.decoderLayerCount)
         let result = try await asrManager.transcribe(
-            speechAudio,
+            audioURL,
             decoderState: &decoderState,
             language: languageHint
         )
@@ -197,59 +196,11 @@ class FluidAudioTranscriptionService: TranscriptionService {
         return TextNormalizer.shared.normalizeSentence(result.text)
     }
 
-    private func preparedSpeechAudio(from audioURL: URL, usesVAD: Bool) async throws -> [Float] {
-        let audioSamples = try readAudioSamples(from: audioURL)
-        let durationSeconds = Double(audioSamples.count) / 16000.0
-        let isVADEnabled = UserDefaults.standard.bool(forKey: "IsVADEnabled")
-
-        guard usesVAD, durationSeconds >= 20.0, isVADEnabled else {
-            return audioSamples
-        }
-
-        let vadConfig = VadConfig(defaultThreshold: 0.7)
-        if vadManager == nil {
-            do {
-                vadManager = try await VadManager(config: vadConfig)
-            } catch {
-                logger.notice("VAD init failed; falling back to full audio: \(error, privacy: .public)")
-                vadManager = nil
-            }
-        }
-
-        guard let vadManager else {
-            return audioSamples
-        }
-
-        do {
-            let segments = try await vadManager.segmentSpeechAudio(audioSamples)
-            return segments.isEmpty ? audioSamples : segments.flatMap { $0 }
-        } catch {
-            logger.notice("VAD segmentation failed; using full audio: \(error, privacy: .public)")
-            return audioSamples
-        }
+    private func loadAudioSamples(from audioURL: URL) throws -> [Float] {
+        try audioConverter.resampleAudioFile(audioURL)
     }
 
-    private func readAudioSamples(from url: URL) throws -> [Float] {
-        do {
-            let data = try Data(contentsOf: url)
-            guard data.count > 44 else {
-                throw ASRError.invalidAudioData
-            }
-
-            let floats = stride(from: 44, to: data.count, by: 2).map {
-                return data[$0..<$0 + 2].withUnsafeBytes {
-                    let short = Int16(littleEndian: $0.load(as: Int16.self))
-                    return max(-1.0, min(Float(short) / 32767.0, 1.0))
-                }
-            }
-
-            return floats
-        } catch {
-            throw ASRError.invalidAudioData
-        }
-    }
-
-    // Releases ASR/VAD resources but preserves cached models for reuse
+    // Releases ASR resources but preserves cached models for reuse
     func cleanup() async {
         await cleanupLoadedManagers()
     }

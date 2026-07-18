@@ -53,11 +53,11 @@ struct LicenseManagementView: View {
             isPresented: $showingDeactivateConfirmation
         ) {
             Button("Deactivate License", role: .destructive) {
-                licenseViewModel.removeLicense()
+                Task { await licenseViewModel.deactivateLicense() }
             }
-            Button("Cancel", role: .cancel) { }
+            Button("Cancel", role: .cancel) {}
         } message: {
-            Text("This removes the license from this Mac. You can activate it again later.")
+            Text("This deactivates VoiceInk on this Mac and frees a device on your license.")
         }
     }
 
@@ -115,6 +115,12 @@ struct LicenseManagementView: View {
     private var activeContent: some View {
         VStack(spacing: 14) {
             activeLicenseCard
+            if let message = licenseViewModel.validationMessage {
+                ValidationMessage(
+                    message: message,
+                    isSuccess: licenseViewModel.validationSuccess
+                )
+            }
             resourcesPanel
         }
         .frame(maxWidth: .infinity, alignment: .topLeading)
@@ -140,7 +146,8 @@ struct LicenseManagementView: View {
             HStack(spacing: 10) {
                 BenefitPill(title: "Lifetime access", systemImage: "infinity", tint: neutralIconColor)
                 BenefitPill(title: "Free updates", systemImage: "arrow.down.circle.fill", tint: neutralIconColor)
-                BenefitPill(title: "Priority support", systemImage: "bubble.left.and.bubble.right.fill", tint: neutralIconColor)
+                BenefitPill(
+                    title: "Priority support", systemImage: "bubble.left.and.bubble.right.fill", tint: neutralIconColor)
             }
 
             LicenseActionButton(
@@ -201,7 +208,9 @@ struct LicenseManagementView: View {
             onCopyLicenseKey: copyLicenseKey
         ) {
             HStack(spacing: 10) {
-                ResourceButton(title: "Manage License", systemImage: "person.crop.circle.badge.checkmark", tint: neutralIconColor) {
+                ResourceButton(
+                    title: "Manage License", systemImage: "person.crop.circle.badge.checkmark", tint: neutralIconColor
+                ) {
                     openLicensePortal()
                 }
 
@@ -212,6 +221,7 @@ struct LicenseManagementView: View {
                 ) {
                     showingDeactivateConfirmation = true
                 }
+                .disabled(licenseViewModel.isDeactivating)
             }
         }
     }
@@ -236,7 +246,7 @@ struct LicenseManagementView: View {
         LazyVGrid(
             columns: [
                 GridItem(.flexible(), spacing: 10),
-                GridItem(.flexible(), spacing: 10)
+                GridItem(.flexible(), spacing: 10),
             ],
             alignment: .leading,
             spacing: 10
@@ -535,12 +545,14 @@ private struct ReportFeedbackBottomPanel: View {
                         .multilineTextAlignment(.center)
                         .fixedSize(horizontal: false, vertical: true)
 
-                    Text("Have feedback, a bug report, or something that feels off? Send a note with system information by email, or join Discord for community discussion. Every report helps make VoiceInk more reliable and easier to use.")
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                        .multilineTextAlignment(.center)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .frame(maxWidth: 540)
+                    Text(
+                        "Have feedback, a bug report, or something that feels off? Send a note with system information by email, or join Discord for community discussion. Every report helps make VoiceInk more reliable and easier to use."
+                    )
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: 540)
                 }
 
                 Text("REACH OUT")

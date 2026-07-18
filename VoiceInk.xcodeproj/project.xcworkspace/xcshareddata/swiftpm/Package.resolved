@@ -16,7 +16,7 @@
       "location" : "https://github.com/FluidInference/FluidAudio.git",
       "state" : {
         "branch" : "main",
-        "revision" : "3c6e79f1d74411cae1f3daf50260dd19a585dc2d"
+        "revision" : "372eb32a3b23342d11dca41ed75cd4d11d3f8955"
       }
     },
     {
@@ -43,7 +43,7 @@
       "location" : "https://github.com/Beingpax/LLMkit.git",
       "state" : {
         "branch" : "main",
-        "revision" : "fc9a18ce30ca5e7f49265fb3be8b3b02055d4fa9"
+        "revision" : "bbfbf5c4cf903d660010ad23f80fbfb7f76ba416"
       }
     },
     {

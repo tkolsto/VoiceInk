@@ -38,6 +38,15 @@ enum Formatters {
         value >= 1000 ? formattedCompactNumber(value) : "\(value)"
     }
 
+    static func localizedHourFormatter(calendar: Calendar) -> DateFormatter {
+        let formatter = DateFormatter()
+        formatter.calendar = calendar
+        formatter.timeZone = calendar.timeZone
+        formatter.locale = .current
+        formatter.setLocalizedDateFormatFromTemplate("j")
+        return formatter
+    }
+
     static func formattedCompactHoursAndMinutes(_ interval: TimeInterval) -> String {
         let totalMinutes = max(0, Int((interval / 60).rounded()))
         let hours = totalMinutes / 60
@@ -56,6 +65,17 @@ enum Formatters {
         }
 
         return "\(minutes)m"
+    }
+
+    static func formattedSavedTime(_ interval: TimeInterval) -> String {
+        let totalMinutes = max(0, Int((interval / 60).rounded()))
+        let hours = totalMinutes / 60
+
+        guard hours >= 1000 else {
+            return formattedCompactHoursAndMinutes(interval)
+        }
+
+        return "\(formattedCompactNumber(hours)) \(String(localized: "hours"))"
     }
 
     static func roundedChartMaximum(for value: Int) -> Int {
@@ -82,7 +102,9 @@ enum Formatters {
         return Int(step * magnitude)
     }
 
-    static func formattedDuration(_ interval: TimeInterval, style: DateComponentsFormatter.UnitsStyle, fallback: String = "-") -> String {
+    static func formattedDuration(
+        _ interval: TimeInterval, style: DateComponentsFormatter.UnitsStyle, fallback: String = "-"
+    ) -> String {
         guard interval > 0 else { return fallback }
         let formatter = DateComponentsFormatter()
         formatter.maximumUnitCount = 2

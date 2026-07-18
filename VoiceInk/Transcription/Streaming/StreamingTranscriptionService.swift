@@ -102,6 +102,11 @@ enum StreamingState {
     case cancelled
 }
 
+enum StreamingStopResult {
+    case finalized(text: String)
+    case requiresBatchFallback
+}
+
 /// Manages a streaming transcription lifecycle: buffers audio chunks, sends them to the provider, and collects the final text.
 @MainActor
 class StreamingTranscriptionService {
@@ -121,7 +126,10 @@ class StreamingTranscriptionService {
     private var firstPartialLogged = false
     private var firstCommitLogged = false
 
-    init(modelContext: ModelContext, fluidAudioService: FluidAudioTranscriptionService? = nil, onPartialTranscript: ((String) -> Void)? = nil) {
+    init(
+        modelContext: ModelContext, fluidAudioService: FluidAudioTranscriptionService? = nil,
+        onPartialTranscript: ((String) -> Void)? = nil
+    ) {
         self.modelContext = modelContext
         self.fluidAudioService = fluidAudioService
         self.onPartialTranscript = onPartialTranscript
@@ -154,7 +162,9 @@ class StreamingTranscriptionService {
         self.provider = provider
 
         let selectedLanguage = context.language ?? "auto"
-        logger.notice("Streaming start requested model=\(model.displayName, privacy: .public) language=\(selectedLanguage, privacy: .public)")
+        logger.notice(
+            "Streaming start requested model=\(model.displayName, privacy: .public) language=\(selectedLanguage, privacy: .public)"
+        )
 
         try await provider.connect(model: model, language: selectedLanguage)
 
@@ -169,7 +179,9 @@ class StreamingTranscriptionService {
         startSendLoop()
         startEventConsumer()
 
-        logger.notice("Streaming connected model=\(model.displayName, privacy: .public) elapsed=\(Date().timeIntervalSince(start), format: .fixed(precision: 3), privacy: .public)s")
+        logger.notice(
+            "Streaming connected model=\(model.displayName, privacy: .public) elapsed=\(Date().timeIntervalSince(start), format: .fixed(precision: 3), privacy: .public)s"
+        )
     }
 
     /// Buffers an audio chunk for sending. Safe to call from the recorder processing queue.
@@ -180,16 +192,25 @@ class StreamingTranscriptionService {
         }
     }
 
-    /// Stops streaming, commits remaining audio, and returns the final transcribed text.
-    func stopAndGetFinalText() async throws -> String {
+    /// Stops streaming and follows the provider's requested finalization path.
+    func stopAndFinalize() async throws -> StreamingStopResult {
         guard let provider = provider, state == .streaming else {
             throw StreamingTranscriptionError.notConnected
+        }
+
+        if provider.stopDisposition == .useBatchFallback {
+            logger.notice("Streaming provider requested full batch fallback")
+            state = .done
+            await cleanupStreaming()
+            return .requiresBatchFallback
         }
 
         state = .committing
         stopStartedAt = Date()
         let beforeDrain = metrics.snapshot()
-        logger.notice("Streaming stop requested receivedChunks=\(beforeDrain.receivedChunks, privacy: .public) sentChunks=\(beforeDrain.sentChunks, privacy: .public) droppedChunks=\(beforeDrain.droppedChunks, privacy: .public) receivedBytes=\(beforeDrain.receivedBytes, privacy: .public) sentBytes=\(beforeDrain.sentBytes, privacy: .public) droppedBytes=\(beforeDrain.droppedBytes, privacy: .public)")
+        logger.notice(
+            "Streaming stop requested receivedChunks=\(beforeDrain.receivedChunks, privacy: .public) sentChunks=\(beforeDrain.sentChunks, privacy: .public) droppedChunks=\(beforeDrain.droppedChunks, privacy: .public) receivedBytes=\(beforeDrain.receivedBytes, privacy: .public) sentBytes=\(beforeDrain.sentBytes, privacy: .public) droppedBytes=\(beforeDrain.droppedBytes, privacy: .public)"
+        )
 
         // Finish the chunk source so the send loop drains remaining chunks and exits naturally.
         await drainRemainingChunks()
@@ -213,13 +234,15 @@ class StreamingTranscriptionService {
         // Wait for the server to acknowledge our commit (or timeout)
         let finalText = await waitForFinalCommit(signalStream: signalStream)
         if let stopStartedAt {
-            logger.notice("Streaming stop completed elapsed=\(Date().timeIntervalSince(stopStartedAt), format: .fixed(precision: 3), privacy: .public)s finalChars=\(finalText.count, privacy: .public)")
+            logger.notice(
+                "Streaming stop completed elapsed=\(Date().timeIntervalSince(stopStartedAt), format: .fixed(precision: 3), privacy: .public)s finalChars=\(finalText.count, privacy: .public)"
+            )
         }
 
         state = .done
         await cleanupStreaming()
 
-        return finalText
+        return .finalized(text: finalText)
     }
 
     /// Cancels the streaming session without waiting for results.
@@ -260,13 +283,18 @@ class StreamingTranscriptionService {
             }
 
             guard let fluidAudioService else {
-                fatalError("FluidAudioTranscriptionService required for FluidAudio streaming. Ensure it is passed to StreamingTranscriptionService.")
+                fatalError(
+                    "FluidAudioTranscriptionService required for FluidAudio streaming. Ensure it is passed to StreamingTranscriptionService."
+                )
             }
             return FluidAudioStreamingProvider(fluidAudioService: fluidAudioService)
         }
         guard let cloudProvider = CloudProviderRegistry.provider(for: model.provider),
-              let streamingProvider = cloudProvider.makeStreamingProvider(modelContext: modelContext) else {
-            fatalError("Unsupported streaming provider: \(model.provider). Check shouldUseRealtimeTranscription() before calling startStreaming().")
+            let streamingProvider = cloudProvider.makeStreamingProvider(modelContext: modelContext)
+        else {
+            fatalError(
+                "Unsupported streaming provider: \(model.provider). Check shouldUseRealtimeTranscription() before calling startStreaming()."
+            )
         }
         return streamingProvider
     }
@@ -299,7 +327,9 @@ class StreamingTranscriptionService {
         await sendTask?.value
         sendTask = nil
         let snapshot = metrics.snapshot()
-        logger.notice("Streaming drain finished elapsed=\(Date().timeIntervalSince(start), format: .fixed(precision: 3), privacy: .public)s receivedChunks=\(snapshot.receivedChunks, privacy: .public) sentChunks=\(snapshot.sentChunks, privacy: .public) droppedChunks=\(snapshot.droppedChunks, privacy: .public) receivedBytes=\(snapshot.receivedBytes, privacy: .public) sentBytes=\(snapshot.sentBytes, privacy: .public) droppedBytes=\(snapshot.droppedBytes, privacy: .public)")
+        logger.notice(
+            "Streaming drain finished elapsed=\(Date().timeIntervalSince(start), format: .fixed(precision: 3), privacy: .public)s receivedChunks=\(snapshot.receivedChunks, privacy: .public) sentChunks=\(snapshot.sentChunks, privacy: .public) droppedChunks=\(snapshot.droppedChunks, privacy: .public) receivedBytes=\(snapshot.receivedBytes, privacy: .public) sentBytes=\(snapshot.sentBytes, privacy: .public) droppedBytes=\(snapshot.droppedBytes, privacy: .public)"
+        )
     }
 
     /// Consumes transcription events throughout the session, accumulating committed segments.
@@ -317,7 +347,9 @@ class StreamingTranscriptionService {
                         if !self.firstCommitLogged {
                             self.firstCommitLogged = true
                             let elapsed = self.stopStartedAt.map { Date().timeIntervalSince($0) } ?? 0
-                            self.logger.notice("Streaming first committed event chars=\(trimmed.count, privacy: .public) stopElapsed=\(elapsed, format: .fixed(precision: 3), privacy: .public)s")
+                            self.logger.notice(
+                                "Streaming first committed event chars=\(trimmed.count, privacy: .public) stopElapsed=\(elapsed, format: .fixed(precision: 3), privacy: .public)s"
+                            )
                         }
                         if !trimmed.isEmpty {
                             self.committedSegments.append(trimmed)
@@ -358,7 +390,7 @@ class StreamingTranscriptionService {
                         self.logger.error("Streaming event error: \(error, privacy: .public)")
                     }
                 }
-            }  
+            }
         }
     }
 
@@ -374,7 +406,7 @@ class StreamingTranscriptionService {
             }
 
             group.addTask {
-                try? await Task.sleep(nanoseconds: 10_000_000_000) // 10 seconds
+                try? await Task.sleep(nanoseconds: 10_000_000_000)  // 10 seconds
                 return false
             }
 
@@ -382,7 +414,9 @@ class StreamingTranscriptionService {
             group.cancelAll()
             return result
         }
-        logger.notice("Streaming final wait finished received=\(receivedInTime, privacy: .public) segments=\(self.committedSegments.count, privacy: .public)")
+        logger.notice(
+            "Streaming final wait finished received=\(receivedInTime, privacy: .public) segments=\(self.committedSegments.count, privacy: .public)"
+        )
 
         // Clean up the signal
         commitSignal?.finish()

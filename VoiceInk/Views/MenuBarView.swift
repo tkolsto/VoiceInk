@@ -1,13 +1,18 @@
-import SwiftUI
 import LaunchAtLogin
+import OSLog
+import SwiftUI
 
 struct MenuBarView: View {
+    private let logger = Logger(subsystem: "com.prakashjoshipax.voiceink", category: "MenuBarWindowFlow")
+
+    @Environment(\.openWindow) private var openWindow
     @EnvironmentObject var engine: VoiceInkEngine
     @EnvironmentObject var recorderUIManager: RecorderUIManager
     @EnvironmentObject var transcriptionModelManager: TranscriptionModelManager
     @EnvironmentObject var whisperModelManager: WhisperModelManager
     @EnvironmentObject var recordingShortcutManager: RecordingShortcutManager
     @EnvironmentObject var menuBarManager: MenuBarManager
+    @EnvironmentObject var mainWindowNavigation: MainWindowNavigation
     @EnvironmentObject var updaterViewModel: UpdaterViewModel
     @EnvironmentObject var enhancementService: AIEnhancementService
     @EnvironmentObject var aiService: AIService
@@ -15,7 +20,7 @@ struct MenuBarView: View {
     @ObservedObject var audioDeviceManager = AudioDeviceManager.shared
     @AppStorage("hasCompletedOnboardingV2") private var hasCompletedOnboardingV2 = false
     @State private var launchAtLoginEnabled = LaunchAtLogin.isEnabled
-    
+
     var body: some View {
         VStack {
             if hasCompletedOnboardingV2 {
@@ -29,7 +34,7 @@ struct MenuBarView: View {
     private var onboardingMenu: some View {
         Group {
             Button("Complete Onboarding") {
-                menuBarManager.focusMainWindow()
+                showMainWindow(reason: "Complete Onboarding")
             }
 
             Divider()
@@ -66,11 +71,11 @@ struct MenuBarView: View {
                 Divider()
 
                 Button("Manage Modes") {
-                    menuBarManager.openMainWindowAndNavigate(to: "Modes")
+                    showMainWindowAndNavigate(to: "Modes", reason: "Manage Modes")
                 }
 
                 Button("Manage Models") {
-                    menuBarManager.openMainWindowAndNavigate(to: "AI Models")
+                    showMainWindowAndNavigate(to: "AI Models", reason: "Manage Models")
                 }
             } label: {
                 HStack {
@@ -122,14 +127,19 @@ struct MenuBarView: View {
                 LastTranscriptionService.copyLastTranscription(from: engine.modelContext)
             }
             .keyboardShortcut("c", modifiers: [.command, .shift])
-            
+
             Button("History") {
                 menuBarManager.openHistoryWindow()
             }
             .keyboardShortcut("h", modifiers: [.command, .shift])
-            
+
             Button(menuBarManager.isMenuBarOnly ? "Show Dock Icon" : "Hide Dock Icon") {
+                let shouldShowMainWindow = menuBarManager.isMenuBarOnly
                 menuBarManager.toggleMenuBarOnly()
+
+                if shouldShowMainWindow {
+                    showMainWindow(reason: "Show Dock Icon")
+                }
             }
             .keyboardShortcut("d", modifiers: [.command, .shift])
 
@@ -141,7 +151,7 @@ struct MenuBarView: View {
             Divider()
 
             Button("Settings") {
-                menuBarManager.openMainWindowAndNavigate(to: "Settings")
+                showMainWindowAndNavigate(to: "Settings", reason: "Settings")
             }
             .keyboardShortcut(",", modifiers: .command)
 
@@ -154,5 +164,38 @@ struct MenuBarView: View {
                 NSApplication.shared.terminate(nil)
             }
         }
+    }
+
+    private func showMainWindow(reason: String) {
+        let existingWindow = WindowManager.shared.currentMainWindow()
+        logger.notice(
+            "🧭 Menu bar requested main window. reason=\(reason, privacy: .public); menuBarOnly=\(self.menuBarManager.isMenuBarOnly, privacy: .public); hasExistingMainWindow=\((existingWindow != nil), privacy: .public); activationPolicy=\(WindowDiagnostics.activationPolicyDescription(NSApplication.shared.activationPolicy()), privacy: .public); snapshot=\(WindowDiagnostics.windowSnapshot(), privacy: .public)"
+        )
+        menuBarManager.activateForPresentedWindow(reason: reason)
+
+        if existingWindow == nil {
+            WindowManager.shared.prepareForUserRequestedMainWindow()
+            openWindow(id: AppWindowID.main)
+            logger.notice(
+                "🧭 Menu bar requested SwiftUI to create/open main window. reason=\(reason, privacy: .public); path=createViaOpenWindow"
+            )
+        } else {
+            openWindow(id: AppWindowID.main)
+            WindowManager.shared.showMainWindow()
+            logger.notice(
+                "🧭 Menu bar requested SwiftUI to open existing main window and asked WindowManager to present it. reason=\(reason, privacy: .public); path=existingWindow"
+            )
+        }
+    }
+
+    private func showMainWindowAndNavigate(to destination: String, reason: String) {
+        logger.notice(
+            "🧭 Menu bar navigation requested. reason=\(reason, privacy: .public); destination=\(destination, privacy: .public); selectedBefore=\(self.mainWindowNavigation.selectedView.rawValue, privacy: .public)"
+        )
+        mainWindowNavigation.navigate(to: destination)
+        logger.notice(
+            "🧭 Menu bar navigation state updated. reason=\(reason, privacy: .public); destination=\(destination, privacy: .public); selectedAfter=\(self.mainWindowNavigation.selectedView.rawValue, privacy: .public)"
+        )
+        showMainWindow(reason: reason)
     }
 }

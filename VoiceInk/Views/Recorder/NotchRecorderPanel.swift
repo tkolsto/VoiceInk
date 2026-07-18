@@ -1,5 +1,5 @@
-import SwiftUI
 import AppKit
+import SwiftUI
 
 class KeyablePanel: NSPanel {
     override var canBecomeKey: Bool { true }
@@ -21,6 +21,7 @@ class NotchRecorderPanel: KeyablePanel {
         )
 
         self.isFloatingPanel = true
+        self.canHide = false
         self.level = .statusBar + 3
         self.backgroundColor = .clear
         self.isOpaque = false
@@ -54,7 +55,8 @@ class NotchRecorderPanel: KeyablePanel {
 
         let notchWidth: CGFloat = {
             if let left = screen.auxiliaryTopLeftArea?.width,
-               let right = screen.auxiliaryTopRightArea?.width {
+                let right = screen.auxiliaryTopRightArea?.width
+            {
                 return screen.frame.width - left - right
             }
             return 180
