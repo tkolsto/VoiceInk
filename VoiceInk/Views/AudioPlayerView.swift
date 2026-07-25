@@ -350,6 +350,16 @@ struct AudioPlayerView: View {
     let url: URL
     let transcription: Transcription?
     var onInfoTap: (() -> Void)?
+
+    enum RetranscribeStrategy {
+        case append                 // History: insert a new Transcription record
+        case replace(Transcription) // Queue: mutate this record in place
+    }
+
+    var retranscribeStrategy: RetranscribeStrategy = .append
+    var showsFinderButton: Bool = true
+    var showsInfoButton: Bool = true
+
     @StateObject private var playerManager = AudioPlayerManager()
     @State private var isHovering = false
     @State private var isRetranscribing = false
@@ -404,8 +414,10 @@ struct AudioPlayerView: View {
                 Spacer()
 
                 HStack(spacing: 8) {
-                    CircleIconButton(icon: "folder", action: showInFinder)
-                        .help("Show in Finder")
+                    if showsFinderButton {
+                        CircleIconButton(icon: "folder", action: showInFinder)
+                            .help("Show in Finder")
+                    }
 
                     Button(action: { playerManager.cyclePlaybackRate() }) {
                         Circle()
@@ -462,7 +474,7 @@ struct AudioPlayerView: View {
                         }
                     }
 
-                    if let onInfoTap {
+                    if showsInfoButton, let onInfoTap {
                         CircleIconButton(icon: "info.circle", action: onInfoTap)
                             .help("View details")
                     }
@@ -661,11 +673,21 @@ struct AudioPlayerView: View {
 
         Task {
             do {
-                let _ = try await transcriptionService.retranscribeAudio(
-                    from: url,
-                    using: transcriptionConfiguration.model,
-                    mode: selectedMode
-                )
+                switch retranscribeStrategy {
+                case .append:
+                    let _ = try await transcriptionService.retranscribeAudio(
+                        from: url,
+                        using: transcriptionConfiguration.model,
+                        mode: selectedMode
+                    )
+                case .replace(let target):
+                    try await transcriptionService.retranscribeInPlace(
+                        target,
+                        from: url,
+                        using: transcriptionConfiguration.model,
+                        mode: selectedMode
+                    )
+                }
                 await MainActor.run {
                     isRetranscribing = false
                     showSuccessFeedback(.retranscribeSuccess, title: String(localized: "Retranscription successful"))
