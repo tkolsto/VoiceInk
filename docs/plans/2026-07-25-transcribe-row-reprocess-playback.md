@@ -18,12 +18,22 @@
 - Persistent recordings dir: `applicationSupportDirectory/com.prakashjoshipax.VoiceInk/Recordings/`.
 - Commit after each task. No AI attribution in commit messages.
 
-**Build/verify command** (used as each task's "test cycle"):
+**Build/verify command** (used as each task's "test cycle"). This repo requires
+local ad-hoc signing via `LocalBuild.xcconfig` — a plain `xcodebuild ... build`
+fails with a provisioning-profile error. Use the incremental local build (reuses
+`.local-build`, do NOT wipe it):
 ```bash
 xcodebuild -project VoiceInk.xcodeproj -scheme VoiceInk -configuration Debug \
-  -destination 'platform=macOS' build 2>&1 | tail -5
+  -derivedDataPath .local-build -xcconfig LocalBuild.xcconfig \
+  CODE_SIGN_IDENTITY="-" CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=YES \
+  DEVELOPMENT_TEAM="" \
+  CODE_SIGN_ENTITLEMENTS="$(pwd)/VoiceInk/VoiceInk.local.entitlements" \
+  SWIFT_ACTIVE_COMPILATION_CONDITIONS='$(inherited) LOCAL_BUILD' \
+  build 2>&1 | tail -6
 ```
-Expected on success: `** BUILD SUCCEEDED **`. (Building in Xcode with ⌘B is the equivalent practical check; the repo uses `LocalBuild.xcconfig` for local signing.)
+Expected on success: `** BUILD SUCCEEDED **`. (`make local` does the same but wipes
+`.local-build` first for a full rebuild — slower. Requires the prebuilt
+`whisper.xcframework` at `~/VoiceInk-Dependencies/…`, already present.)
 
 ---
 
