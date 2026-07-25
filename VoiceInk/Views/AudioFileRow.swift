@@ -148,6 +148,16 @@ struct AudioFileRow: View {
             }
             .frame(maxHeight: 350)
 
+            if let audioURL = resolvedAudioURL(for: transcription) {
+                AudioPlayerView(
+                    url: audioURL,
+                    transcription: transcription,
+                    retranscribeStrategy: .replace(transcription),
+                    showsFinderButton: false,
+                    showsInfoButton: false
+                )
+            }
+
             HStack(spacing: 12) {
                 if let model = transcription.transcriptionModelName {
                     Label(model, systemImage: "cpu")
@@ -217,5 +227,16 @@ struct AudioFileRow: View {
         let minutes = Int(duration) / 60
         let seconds = Int(duration) % 60
         return String(format: "%d:%02d", minutes, seconds)
+    }
+
+    /// The permanent audio copy for this record, if it still exists on disk.
+    /// Uses `transcription.audioFileURL` (the Recordings/*.wav copy) — not
+    /// `item.url`, which may point at a moved/deleted original.
+    private func resolvedAudioURL(for transcription: Transcription) -> URL? {
+        guard let urlString = transcription.audioFileURL,
+              let url = URL(string: urlString),
+              FileManager.default.fileExists(atPath: url.path)
+        else { return nil }
+        return url
     }
 }
