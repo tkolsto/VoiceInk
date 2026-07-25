@@ -209,4 +209,105 @@ class AudioTranscriptionService: ObservableObject {
             throw error
         }
     }
+
+    /// Re-runs transcription (and optional enhancement) for an existing record,
+    /// mutating it in place rather than inserting a new one. `url` must be the
+    /// record's already-permanent audio file — it is not copied again.
+    func retranscribeInPlace(
+        _ transcription: Transcription,
+        from url: URL,
+        using model: any TranscriptionModel,
+        mode: ModeConfig? = nil
+    ) async throws {
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            throw TranscriptionError.noAudioFile
+        }
+
+        await MainActor.run { isTranscribing = true }
+
+        do {
+            let mode = mode ?? ModeManager.shared.currentEffectiveConfiguration
+            let language = TranscriptionLanguageSupport.validLanguageOrFallback(
+                mode?.selectedLanguage,
+                for: model,
+                realtimeEnabled: mode?.isRealtimeTranscriptionEnabled
+            )
+            let requestContext = TranscriptionRequestContext(
+                language: language,
+                prompt: model.provider == .whisper
+                    ? UserDefaults.standard.string(forKey: "TranscriptionPrompt") : nil
+            )
+            let modeName = (mode?.isEnabled == true) ? mode?.name : nil
+            let modeEmoji = (mode?.isEnabled == true) ? mode?.icon.value : nil
+
+            let transcriptionStart = Date()
+            var text = try await serviceRegistry.transcribe(audioURL: url, model: model, context: requestContext)
+            let transcriptionDuration = Date().timeIntervalSince(transcriptionStart)
+            text = TranscriptionOutputFilter.filter(text)
+            text = text.trimmingCharacters(in: .whitespacesAndNewlines)
+
+            let formattingConfiguration = ModeRuntimeResolver.transcriptionFormattingConfiguration(mode: mode)
+            if formattingConfiguration.isTextFormattingEnabled {
+                text = ParagraphFormatter.format(text)
+            }
+            text = WordReplacementService.shared.applyReplacements(to: text, using: modelContext)
+            let cleanedText = text
+
+            let enhancementConfiguration = enhancementService.flatMap { service in
+                service.getAIService().map { aiService in
+                    ModeRuntimeResolver.currentEnhancementConfiguration(
+                        mode: mode,
+                        enhancementService: service,
+                        aiService: aiService
+                    )
+                }
+            }
+
+            var newEnhancedText: String? = nil
+            var newAIModelName: String? = nil
+            var newPromptName: String? = nil
+            var newEnhancementDuration: TimeInterval = 0
+            var newSystemMessage: String? = nil
+            var newUserMessage: String? = nil
+
+            if let enhancementService,
+                let enhancementConfiguration,
+                enhancementConfiguration.isEnabled,
+                enhancementService.isConfigured(for: enhancementConfiguration)
+            {
+                let (enhancedText, enhancementDuration, promptName) = try await enhancementService.enhance(
+                    cleanedText,
+                    configuration: enhancementConfiguration
+                )
+                newEnhancedText = enhancedText
+                newAIModelName = enhancementConfiguration.modelName ?? enhancementConfiguration.provider?.defaultModel
+                newPromptName = promptName
+                newEnhancementDuration = enhancementDuration
+                newSystemMessage = enhancementService.lastSystemMessageSent
+                newUserMessage = enhancementService.lastUserMessageSent
+            }
+
+            await MainActor.run {
+                transcription.text = cleanedText
+                transcription.enhancedText = newEnhancedText
+                transcription.transcriptionModelName = model.displayName
+                transcription.aiEnhancementModelName = newAIModelName
+                transcription.promptName = newPromptName
+                transcription.transcriptionDuration = transcriptionDuration
+                transcription.enhancementDuration = newEnhancementDuration
+                transcription.aiRequestSystemMessage = newSystemMessage
+                transcription.aiRequestUserMessage = newUserMessage
+                transcription.modeName = modeName
+                transcription.modeEmoji = modeEmoji
+                try? modelContext.save()
+                NotificationCenter.default.post(name: .transcriptionCompleted, object: transcription)
+                isTranscribing = false
+            }
+        } catch {
+            logger.error("❌ In-place retranscription failed: \(error, privacy: .public)")
+            currentError = .transcriptionFailed
+            await MainActor.run { isTranscribing = false }
+            throw error
+        }
+    }
 }
