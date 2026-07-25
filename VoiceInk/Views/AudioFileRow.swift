@@ -3,6 +3,7 @@ import SwiftUI
 struct AudioFileRow: View {
     @ObservedObject var item: AudioFileQueueItem
     let isExpanded: Bool
+    let isQueueProcessing: Bool
     let onToggleExpand: () -> Void
     let onRemove: () -> Void
     let onRetry: () -> Void
@@ -14,7 +15,7 @@ struct AudioFileRow: View {
         case .original:
             return item.transcription?.text ?? ""
         case .enhanced:
-            return item.transcription?.enhancedText ?? ""
+            return item.transcription?.enhancedText ?? item.transcription?.text ?? ""
         }
     }
 
@@ -154,7 +155,8 @@ struct AudioFileRow: View {
                     transcription: transcription,
                     retranscribeStrategy: .replace(transcription),
                     showsFinderButton: false,
-                    showsInfoButton: false
+                    showsInfoButton: false,
+                    isRetranscribeDisabled: isQueueProcessing
                 )
             }
 

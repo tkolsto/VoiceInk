@@ -109,6 +109,7 @@ struct AudioTranscribeView: View {
                         AudioFileRow(
                             item: item,
                             isExpanded: expandedItemId == item.id,
+                            isQueueProcessing: transcriptionManager.isProcessingQueue,
                             onToggleExpand: {
                                 withAnimation(.easeInOut(duration: 0.2)) {
                                     expandedItemId = expandedItemId == item.id ? nil : item.id

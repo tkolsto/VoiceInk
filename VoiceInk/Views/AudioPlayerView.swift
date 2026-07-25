@@ -359,6 +359,7 @@ struct AudioPlayerView: View {
     var retranscribeStrategy: RetranscribeStrategy = .append
     var showsFinderButton: Bool = true
     var showsInfoButton: Bool = true
+    var isRetranscribeDisabled: Bool = false
 
     @StateObject private var playerManager = AudioPlayerManager()
     @State private var isHovering = false
@@ -457,8 +458,8 @@ struct AudioPlayerView: View {
                         showSuccess: operationFeedback == .retranscribeSuccess,
                         action: retranscribeAudio
                     )
-                    .disabled(isOperationInProgress)
-                    .help("Retranscribe this audio")
+                    .disabled(isOperationInProgress || isRetranscribeDisabled)
+                    .help(isRetranscribeDisabled ? "Finish the queue to reprocess" : "Retranscribe this audio")
 
                     if transcription != nil {
                         AsyncCircleButton(
