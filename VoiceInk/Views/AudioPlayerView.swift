@@ -673,13 +673,12 @@ struct AudioPlayerView: View {
                     )
                     enhancementFailure = result.enhancementFailure
                 case .replace(let target):
-                    try await transcriptionService.retranscribeInPlace(
+                    enhancementFailure = try await transcriptionService.retranscribeInPlace(
                         target,
                         from: url,
                         using: transcriptionConfiguration.model,
                         mode: selectedMode
                     )
-                    enhancementFailure = nil
                 }
                 await MainActor.run {
                     isRetranscribing = false

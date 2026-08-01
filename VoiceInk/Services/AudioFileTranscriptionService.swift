@@ -230,12 +230,14 @@ class AudioTranscriptionService: ObservableObject {
     /// Re-runs transcription (and optional enhancement) for an existing record,
     /// mutating it in place rather than inserting a new one. `url` must be the
     /// record's already-permanent audio file — it is not copied again.
+    /// Returns nil on success, or the enhancement-failure description when the transcript was saved but enhancement failed.
+    @discardableResult
     func retranscribeInPlace(
         _ transcription: Transcription,
         from url: URL,
         using model: any TranscriptionModel,
         mode: ModeConfig? = nil
-    ) async throws {
+    ) async throws -> String? {
         guard FileManager.default.fileExists(atPath: url.path) else {
             throw TranscriptionError.noAudioFile
         }
@@ -286,22 +288,30 @@ class AudioTranscriptionService: ObservableObject {
             var newEnhancementDuration: TimeInterval = 0
             var newSystemMessage: String? = nil
             var newUserMessage: String? = nil
+            var enhancementFailure: String? = nil
 
             if let enhancementService,
                 let enhancementConfiguration,
                 enhancementConfiguration.isEnabled,
                 enhancementService.isConfigured(for: enhancementConfiguration)
             {
-                let (enhancedText, enhancementDuration, promptName) = try await enhancementService.enhance(
-                    cleanedText,
-                    configuration: enhancementConfiguration
-                )
-                newEnhancedText = enhancedText
-                newAIModelName = enhancementConfiguration.modelName ?? enhancementConfiguration.provider?.defaultModel
-                newPromptName = promptName
-                newEnhancementDuration = enhancementDuration
-                newSystemMessage = enhancementService.lastSystemMessageSent
-                newUserMessage = enhancementService.lastUserMessageSent
+                do {
+                    let (enhancedText, enhancementDuration, promptName) = try await enhancementService.enhance(
+                        cleanedText,
+                        configuration: enhancementConfiguration
+                    )
+                    newEnhancedText = enhancedText
+                    newAIModelName =
+                        enhancementConfiguration.modelName ?? enhancementConfiguration.provider?.defaultModel
+                    newPromptName = promptName
+                    newEnhancementDuration = enhancementDuration
+                    newSystemMessage = enhancementService.lastSystemMessageSent
+                    newUserMessage = enhancementService.lastUserMessageSent
+                } catch {
+                    let failureDescription = EnhancementFailureFormatter.description(for: error)
+                    enhancementFailure = failureDescription
+                    newEnhancedText = EnhancementFailureFormatter.message(description: failureDescription)
+                }
             }
 
             await MainActor.run {
@@ -320,6 +330,7 @@ class AudioTranscriptionService: ObservableObject {
                 NotificationCenter.default.post(name: .transcriptionCompleted, object: transcription)
                 isTranscribing = false
             }
+            return enhancementFailure
         } catch {
             logger.error("❌ In-place retranscription failed: \(error, privacy: .public)")
             currentError = .transcriptionFailed
