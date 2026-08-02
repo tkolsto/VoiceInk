@@ -82,4 +82,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
     }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        // whisper.framework's ggml Metal teardown aborts in exit-time C++
+        // destructors (ggml_metal_rsets_free) when the app quits while Metal
+        // init is still in flight. All app state is saved at write time, so
+        // skip __cxa_finalize entirely.
+        _exit(0)
+    }
 }
