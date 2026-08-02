@@ -123,6 +123,9 @@ class VoiceInkEngine: NSObject, ObservableObject {
 
     let logger = Logger(subsystem: "com.prakashjoshipax.voiceink", category: "VoiceInkEngine")
 
+    /// Recordings shorter than this contain no usable speech; discard instead of transcribing.
+    private static let minimumTranscribableDuration: TimeInterval = 0.3
+
     init(
         modelContext: ModelContext,
         whisperModelManager: WhisperModelManager,
@@ -194,6 +197,21 @@ class VoiceInkEngine: NSObject, ObservableObject {
 
             if let recordedFile {
                 if !shouldCancelRecording {
+                    let duration = await AudioFileMetadata.duration(for: recordedFile)
+                    if duration < Self.minimumTranscribableDuration {
+                        logger.notice(
+                            "Discarding too-short recording (\(duration, format: .fixed(precision: 3), privacy: .public)s)"
+                        )
+                        activePipelineUseCase = .newSession
+                        cancelCurrentSession()
+                        clearActiveRecordingContext()
+                        try? FileManager.default.removeItem(at: recordedFile)
+                        self.recordedFile = nil
+                        recordingState = .idle
+                        await cleanupResources()
+                        await finishRecorderSession()
+                        return
+                    }
                     let transcription = makeRecordingTranscription(
                         for: recordedFile,
                         text: "",
