@@ -297,6 +297,10 @@ struct VoiceInkApp: App {
                         .environmentObject(enhancementService)
                         .modelContainer(container)
                         .onAppear {
+                            appDelegate.terminationSaveHook = { [container] in
+                                try? container.mainContext.save()
+                            }
+
                             if enableAnnouncements {
                                 AnnouncementsService.shared.start()
                             }

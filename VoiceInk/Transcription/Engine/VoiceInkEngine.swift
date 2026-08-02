@@ -209,6 +209,7 @@ class VoiceInkEngine: NSObject, ObservableObject {
                         self.recordedFile = nil
                         recordingState = .idle
                         await cleanupResources()
+                        await recorderUIManager?.dismissRecorderPanel()
                         await finishRecorderSession()
                         return
                     }

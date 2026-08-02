@@ -8,6 +8,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     weak var menuBarManager: MenuBarManager?
 
+    /// Set by VoiceInkApp once the model container exists; flushes pending
+    /// SwiftData changes before `_exit` skips normal teardown.
+    var terminationSaveHook: (() -> Void)?
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         logger.notice(
             "🧭 Application finished launching. hasMenuBarManager=\((self.menuBarManager != nil), privacy: .public); activationPolicy=\(WindowDiagnostics.activationPolicyDescription(NSApplication.shared.activationPolicy()), privacy: .public); snapshot=\(WindowDiagnostics.windowSnapshot(), privacy: .public)"
@@ -84,6 +88,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        terminationSaveHook?()
         // whisper.framework's ggml Metal teardown aborts in exit-time C++
         // destructors (ggml_metal_rsets_free) when the app quits while Metal
         // init is still in flight. All app state is saved at write time, so
