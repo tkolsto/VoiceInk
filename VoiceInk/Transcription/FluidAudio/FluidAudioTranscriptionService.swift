@@ -88,6 +88,19 @@ class FluidAudioTranscriptionService: TranscriptionService {
             return try await existingTask.value
         }
 
+        let slowLoadNotifier = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 2_000_000_000)
+            guard !Task.isCancelled else { return }
+            NotificationManager.shared.showNotification(
+                title: String(
+                    localized:
+                        "Preparing the transcription model — the first use after an update can take a few minutes"
+                ),
+                type: .info,
+                duration: 8.0
+            )
+        }
+
         let task = Task {
             let cacheDirectory = AsrModels.defaultCacheDirectory(for: version)
             guard AsrModels.modelsExist(at: cacheDirectory, version: version) else {
@@ -106,6 +119,7 @@ class FluidAudioTranscriptionService: TranscriptionService {
 
         do {
             let models = try await task.value
+            slowLoadNotifier.cancel()
             self.cachedModels = models
             // Only clear if we're still the current loading task
             if loadingTask?.version == version {
@@ -113,6 +127,7 @@ class FluidAudioTranscriptionService: TranscriptionService {
             }
             return models
         } catch {
+            slowLoadNotifier.cancel()
             // Only clear if we're still the current loading task
             if loadingTask?.version == version {
                 self.loadingTask = nil
