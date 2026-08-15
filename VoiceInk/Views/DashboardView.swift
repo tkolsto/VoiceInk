@@ -5,7 +5,7 @@ import SwiftUI
 struct DashboardView: View {
     @Environment(\.modelContext) private var modelContext
     @EnvironmentObject private var recordingShortcutManager: RecordingShortcutManager
-    @StateObject private var licenseViewModel = LicenseViewModel()
+    @ObservedObject private var licenseViewModel = LicenseViewModel.shared
 
     var body: some View {
         DashboardContent(

@@ -225,16 +225,19 @@ final class OnboardingFlowController {
         isTranscriptionSetupReady: Bool,
         onComplete: () -> Void
     ) {
-        coordinator.licenseViewModel.startTrial()
+        guard coordinator.licenseViewModel.startTrial() else { return }
         completeOnboarding(
             isTranscriptionSetupReady: isTranscriptionSetupReady,
             onComplete: onComplete
         )
     }
 
-    func activateLicense() {
+    func activateLicense(_ licenseKey: String) {
         Task { @MainActor in
-            await coordinator.licenseViewModel.validateLicense()
+            await coordinator.licenseViewModel.validateLicense(licenseKey)
+            if coordinator.licenseViewModel.hasVerifiedLicense {
+                coordinator.licenseKeyDraft = ""
+            }
         }
     }
 

@@ -22,6 +22,7 @@ struct VoiceInkApp: App {
     @StateObject private var mainWindowNavigation = MainWindowNavigation.shared
     @StateObject private var aiService = AIService()
     @StateObject private var enhancementService: AIEnhancementService
+    @StateObject private var licenseViewModel = LicenseViewModel.shared
     @StateObject private var activeWindowService = ActiveWindowService.shared
     @AppStorage("hasCompletedOnboardingV2") private var hasCompletedOnboardingV2 = false
     @AppStorage("enableAnnouncements") private var enableAnnouncements = true
@@ -230,12 +231,9 @@ struct VoiceInkApp: App {
         )
 
         let dictionarySchema = Schema([VocabularyWord.self, WordReplacement.self])
-        #if LOCAL_BUILD
-            let dictionaryCloudKit: ModelConfiguration.CloudKitDatabase = .none
-        #else
-            let dictionaryCloudKit: ModelConfiguration.CloudKitDatabase = .private(
-                "iCloud.com.prakashjoshipax.VoiceInk")
-        #endif
+        let dictionaryCloudKit: ModelConfiguration.CloudKitDatabase = shouldDisableCloudKitStorage
+            ? .none
+            : .private("iCloud.com.prakashjoshipax.VoiceInk")
         let dictionaryConfig = ModelConfiguration(
             "dictionary",
             schema: dictionarySchema,
@@ -258,6 +256,14 @@ struct VoiceInkApp: App {
                 "❌ Failed to create persistent ModelContainer:\n\(Self.fullErrorDescription(error), privacy: .public)")
             throw error
         }
+    }
+
+    private static var shouldDisableCloudKitStorage: Bool {
+        #if LOCAL_BUILD
+            true
+        #else
+            ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
+        #endif
     }
 
     private static func createInMemoryContainer(schema: Schema, logger: Logger) throws -> ModelContainer {
@@ -360,6 +366,12 @@ struct VoiceInkApp: App {
                 }
             }
             .confettiCelebrationPresenter()
+            .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+                licenseViewModel.refreshLicenseState()
+            }
+            .onReceive(NSWorkspace.shared.notificationCenter.publisher(for: NSWorkspace.didWakeNotification)) { _ in
+                licenseViewModel.refreshLicenseState()
+            }
         }
         .windowStyle(.hiddenTitleBar)
         .defaultSize(width: AppWindowLayout.width, height: AppWindowLayout.minimumHeight)

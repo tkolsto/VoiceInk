@@ -539,19 +539,19 @@ struct AudioPlayerView: View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Select Prompt")
                 .font(.headline)
-                .foregroundColor(.white.opacity(0.9))
+                .foregroundColor(AppTheme.Text.primary)
                 .padding(.horizontal)
                 .padding(.top, 8)
 
             Divider()
-                .background(Color.white.opacity(0.1))
+                .background(AppTheme.Border.subtle)
 
             ScrollView {
                 let prompts = enhancementService.allPrompts
                 VStack(alignment: .leading, spacing: 4) {
                     if prompts.isEmpty {
                         Text("No Prompts Available")
-                            .foregroundColor(.white.opacity(0.8))
+                            .foregroundColor(AppTheme.Text.primary)
                             .font(.system(size: 13))
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 16)
@@ -574,8 +574,8 @@ struct AudioPlayerView: View {
         .frame(width: 220)
         .frame(maxHeight: 340)
         .padding(.vertical, 8)
-        .background(Color.black)
-        .environment(\.colorScheme, .dark)
+        .background(AppTheme.Surface.window)
+        .popoverAppAppearance()
     }
 
     private func selectPromptForReEnhancement(_ prompt: CustomPrompt) {

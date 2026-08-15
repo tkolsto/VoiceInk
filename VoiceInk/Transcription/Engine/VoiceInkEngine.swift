@@ -404,7 +404,10 @@ class VoiceInkEngine: NSObject, ObservableObject {
                         } catch {
                             activeModeTask.cancel()
                             self.logger.error("Recording failed to start: \(error, privacy: .public)")
-                            await self.recorder.stopRecording()
+                            let audioFailure = self.recordingAudioFailure(for: error)
+                            if audioFailure == nil {
+                                await self.recorder.stopRecording()
+                            }
                             self.cancelCurrentSession()
                             if let recordedFile = self.recordedFile {
                                 try? FileManager.default.removeItem(at: recordedFile)
@@ -414,8 +417,17 @@ class VoiceInkEngine: NSObject, ObservableObject {
                             self.activeRecordingStartID = nil
                             self.clearActiveRecordingContext()
                             await self.cleanupResources()
-                            NotificationManager.shared.showNotification(
-                                title: String(localized: "Recording failed to start"), type: .error)
+                            if let failure = audioFailure {
+                                NotificationManager.shared.showNotification(
+                                    title: failure.title,
+                                    type: .error,
+                                    duration: 7.0,
+                                    actionButton: (failure.actionLabel, failure.action)
+                                )
+                            } else {
+                                NotificationManager.shared.showNotification(
+                                    title: String(localized: "Recording failed to start"), type: .error)
+                            }
                             await self.recorderUIManager?.dismissRecorderPanel()
                         }
                     }
@@ -429,8 +441,6 @@ class VoiceInkEngine: NSObject, ObservableObject {
     private func requestRecordPermission(response: @escaping (Bool) -> Void) {
         response(true)
     }
-
-    // MARK: - Recording Preflight
 
     @MainActor
     private func recordingModelFailure(
